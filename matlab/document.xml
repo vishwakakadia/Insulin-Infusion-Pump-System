@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="code"/></w:pPr><w:r><w:t><![CDATA[classdef app4 < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure              matlab.ui.Figure
+        INSULINGLUCAGONEINFUSIONSYSTEMLabel  matlab.ui.control.Label
+        SimulationPanel       matlab.ui.container.Panel
+        History               matlab.ui.control.TextArea
+        HistoryLabel          matlab.ui.control.Label
+        InjectedInsulinLabel  matlab.ui.control.Label
+        MeasuredGlucoseLabel  matlab.ui.control.Label
+        StartButton           matlab.ui.control.Button
+        StopButton            matlab.ui.control.Button
+        UIAxes                matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+ 
+        Vg = 0.12;      % Distribution volume of glucose (L/kg)
+        k1 = 0.042;     % Rate constant for glucose absorption (1/min)
+        k2 = 0.067;     % Rate constant for glucose utilization (1/min)
+        k3 = 0.033;     % Rate constant for glucose production (1/min)
+        Gb = 90;        % Basal glucose concentration (mg/dL)
+        Ib = 4.5;       % Basal insulin concentration (μU/mL)
+        S = 0.0093;     % Insulin sensitivity (L/(μU min)
+        hyperglycemiaThreshold = 180;   % Glucose threshold for hyperglycemia (mg/dL)
+        hyperglycemiaFactor = 0.2; 
+        hypoglycemiaFactor = 0.1;     % Insulin injection factor for hyperglycemia
+        hypoglycemiaThreshold = 80;     % Glucose threshold for hypogly
+        measuredGlucose  % Measured glucose values
+        injectedInsulin  % Injected insulin values
+        textboxValue 
+
+        
+
+        ValidUsername = 'admin';
+        ValidPassword = 'password';
+
+    end
+    
+    methods (Access = private)
+        
+        %function results = func(app)
+    %methods (Access = private)
+    % Other private methods...
+       
+    
+        function runSimulation(app)
+        % Simulation parameters
+            simulationTime = 120;   % Simulation time (minutes)
+            timeStep = 1;           % Time step (minutes)
+            
+            % Initialize simulation variables
+            simulationSteps = round(simulationTime / timeStep);
+            time = zeros(simulationSteps, 1);
+            glucose = zeros(simulationSteps, 1);
+            insulin = zeros(simulationSteps, 1);
+            
+            % Initial conditions
+            G = app.Gb;         % Glucose concentration (mg/dL)
+            I = app.Ib;         % Insulin concentration (μU/mL)
+            
+            % Simulation loop
+            for i = 1:simulationSteps
+                % Store current time, glucose, and insulin values
+                time(i) = (i - 1) * timeStep;
+                glucose(i) = G;
+                insulin(i) = I;
+                
+                % Update glucose dynamics
+                Ra = 0.18 * exp(-0.015 * time(i));   % Rate of appearance of glucose (mg/kg/min)
+                Gdot = -app.k1 * (G - app.Gb) - app.k2 * app.S * (I - app.Ib) + app.k3 * (Ra - G);
+                G = G + Gdot * timeStep + 3 * randn(); 
+                
+                       % Update insulin dynamics
+                if G > 180
+                    % High glucose, inject a larger dose of insulin
+                    I = I + app.hyperglycemiaFactor * (G - app.hyperglycemiaThreshold);
+                    alertText = sprintf('Alert: Hyperglycemia detected!\nGlucose: %.2f mg/dL\n\nPlease contact your doctor as soon as possible.', G);
+                    uialert(app.UIFigure, alertText, 'Hyperglycemia Alert');
+                    app.StartButton.Text = 'Start';
+                    break;  % Exit the simulation loop
+    
+                elseif G < 80
+                    % Low glucose, inject a smaller dose of insulin
+                    I = I + app.hypoglycemiaFactor * (app.hypoglycemiaThreshold - G);
+                    alertText = sprintf('Alert: Hypoglycemia detected!\nGlucose: %.2f mg/dL\nInsulin: %.2f μU/mL \n\n Consume meal which has more glucoge', G, I);
+                    uialert(app.UIFigure, alertText, 'Hypoglycemia Alert');
+                    app.StartButton.Text = 'Start';
+                    break;
+                else
+                    % Glucose within desired range, no insulin injection required
+                    % Determine insulin infusion based on rate of change of glucose
+                    if i > 1
+                        Gchange = glucose(i) - glucose(i-1);
+                        if Gchange > 0
+                            % Glucose level is rising, give insulin infusion
+                            I = I + app.hypoglycemiaFactor * Gchange;
+                            alertText = sprintf('Alert: Hypoglycemia detected!\nGlucose: %.2f mg/dL\nInsulin: %.2f μU/mL\n\n Consume meal which has more glucoge',G,I);
+                            uialert(app.UIFigure, alertText, 'Hypoglycemia Alert');
+                            app.StartButton.Text = 'Start';
+                            break;
+                        end
+                    end
+                end
+                app.measuredGlucose(end+1) = G;
+                app.injectedInsulin(end+1) = I;
+                
+                % Update the measured glucose and injected insulin labels
+                app.MeasuredGlucoseLabel.Text = sprintf('Measured Glucose: %.2f mg/dL', G);
+                app.InjectedInsulinLabel.Text = sprintf('Injected Insulin: %.2f μU/mL', I);
+
+                 % Update the measured glucose and injected insulin text box
+                glucoseStr = sprintf('\n\n Measured Glucose: %0.1f \n Injected Insulin: %0.1f\n\n', G, I);
+                app.textboxValue = strcat(app.textboxValue, glucoseStr);
+                
+                % Trim the textbox value to display only the last 5 measurements
+                numMeasurements = min(length(app.measuredGlucose), 7);
+                app.textboxValue = app.textboxValue(end-(numMeasurements*32)+1:end);
+                app.History.Value = app.textboxValue;
+                
+                % Update the plot
+                plot(app.UIAxes, time, glucose, 'b', time, insulin, 'r');
+                xlabel(app.UIAxes, 'Time (min)');
+                ylabel(app.UIAxes, 'Concentration');
+                title(app.UIAxes, 'Glucose and Insulin Levels');
+                legend(app.UIAxes, 'Glucose', 'Insulin');
+                grid(app.UIAxes, 'on');
+
+                % Pause for visualization
+            pause(5);
+    end
+                       
+                    
+            % Enable the Start button
+            app.StartButton.Enable = 'on';
+        end
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: StopButton
+        function StopButtonPushed(app, event)
+            if app.SimulationRunning
+                app.SimulationRunning = false;
+                app.StartButton.Text = 'Start';
+                app.StartButton.Enable = 'on';
+                app.StopButton.Enable = 'off';
+
+                % Stop the simulation timer
+                stop(app.SimulationTime);
+                delete(app.SimulationTime);
+            end
+        end
+
+        % Button pushed function: StartButton
+        function StartButtonPushed(app, event)
+             app.StartButton.Text = 'Running...';
+    
+            % Disable the Start button during simulation
+            app.StartButton.Enable = 'off';
+
+            app.measuredGlucose = [];
+            app.injectedInsulin = [];
+
+            % Initialize the textbox value
+            app.textboxValue = '';
+            
+            
+            % Run the simulation
+            runSimulation(app);
+    
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 640 480];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create SimulationPanel
+            app.SimulationPanel = uipanel(app.UIFigure);
+            app.SimulationPanel.Title = 'SimulationPanel';
+            app.SimulationPanel.Position = [7 7 629 406];
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.SimulationPanel);
+            xlabel(app.UIAxes, 'time')
+            ylabel(app.UIAxes, 'Concentration')
+            zlabel(app.UIAxes, 'Z')
+            app.UIAxes.Position = [12 145 346 225];
+
+            % Create StopButton
+            app.StopButton = uibutton(app.SimulationPanel, 'push');
+            app.StopButton.ButtonPushedFcn = createCallbackFcn(app, @StopButtonPushed, true);
+            app.StopButton.BackgroundColor = [0 0.4471 0.7412];
+            app.StopButton.FontSize = 14;
+            app.StopButton.FontWeight = 'bold';
+            app.StopButton.FontColor = [1 1 1];
+            app.StopButton.Position = [258 91 100 25];
+            app.StopButton.Text = 'Stop';
+
+            % Create StartButton
+            app.StartButton = uibutton(app.SimulationPanel, 'push');
+            app.StartButton.ButtonPushedFcn = createCallbackFcn(app, @StartButtonPushed, true);
+            app.StartButton.BackgroundColor = [0 0.4471 0.7412];
+            app.StartButton.FontSize = 14;
+            app.StartButton.FontWeight = 'bold';
+            app.StartButton.FontColor = [1 1 1];
+            app.StartButton.Position = [12 91 100 25];
+            app.StartButton.Text = 'Start';
+
+            % Create MeasuredGlucoseLabel
+            app.MeasuredGlucoseLabel = uilabel(app.SimulationPanel);
+            app.MeasuredGlucoseLabel.BackgroundColor = [0.7804 0.8118 0.949];
+            app.MeasuredGlucoseLabel.FontWeight = 'bold';
+            app.MeasuredGlucoseLabel.Position = [75 51 220 22];
+            app.MeasuredGlucoseLabel.Text = 'MeasuredGlucoseLabel';
+
+            % Create InjectedInsulinLabel
+            app.InjectedInsulinLabel = uilabel(app.SimulationPanel);
+            app.InjectedInsulinLabel.BackgroundColor = [0.7804 0.8118 0.949];
+            app.InjectedInsulinLabel.FontWeight = 'bold';
+            app.InjectedInsulinLabel.Position = [75 14 220 22];
+            app.InjectedInsulinLabel.Text = 'InjectedInsulinLabel';
+
+            % Create HistoryLabel
+            app.HistoryLabel = uilabel(app.SimulationPanel);
+            app.HistoryLabel.HorizontalAlignment = 'right';
+            app.HistoryLabel.Position = [387 346 42 22];
+            app.HistoryLabel.Text = 'History';
+
+            % Create History
+            app.History = uitextarea(app.SimulationPanel);
+            app.History.Position = [374 14 240 333];
+
+            % Create INSULINGLUCAGONEINFUSIONSYSTEMLabel
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel = uilabel(app.UIFigure);
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel.FontName = 'Arial Black';
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel.FontSize = 18;
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel.FontColor = [0 0.4471 0.7412];
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel.Position = [111 430 422 24];
+            app.INSULINGLUCAGONEINFUSIONSYSTEMLabel.Text = 'INSULIN-GLUCAGONE INFUSION SYSTEM';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = app4
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end]]></w:t></w:r></w:p></w:body></w:document>
