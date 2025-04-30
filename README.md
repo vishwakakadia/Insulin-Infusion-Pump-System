@@ -7,8 +7,7 @@ For the insulin-Glucagon Infusion pump system,I used Unified process mode for cr
 
 
 The Bergman minimal model can be represented mathematically using
-a set of differential equations. Here is a simplified mathematical represen-
-tation of the Bergman model for insulin and glucose dynamics
+a set of differential equations. Here is a simplified mathematical representation of the Bergman model for insulin and glucose dynamics
 
 ![glucose equation](https://github.com/vishwakakadia/Insulin-Infusion-Pump-System/blob/main/glucose.png)
 
